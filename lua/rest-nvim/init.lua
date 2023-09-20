@@ -172,6 +172,7 @@ rest.run_request = function(req, opts)
     -- http_version = result.http_version,
     headers = splice_headers(result.headers),
     raw = curl_raw_args,
+    form = result.form,
     body = spliced_body,
     dry_run = opts.verbose,
     bufnr = result.bufnr,

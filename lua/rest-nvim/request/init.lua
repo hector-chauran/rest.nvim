@@ -58,7 +58,7 @@ local function get_body(bufnr, start_line, stop_line)
       break
     end
     -- Ignore commented lines with and without indent
-    if not utils.contains_comments(line) then
+    if not utils.contains_comments(line) and not line:find("^-F .+") then
       lines2[#lines2 + 1] = line
     end
   end
@@ -149,6 +149,7 @@ end
 -- @param end_line Line where the request ends
 local function get_curl_args(bufnr, headers_end, end_line)
   local curl_args = {}
+  local form = {}
   local body_start = end_line
 
   log.debug("Getting curl args between lines", headers_end, " and ", end_line)
@@ -156,19 +157,36 @@ local function get_curl_args(bufnr, headers_end, end_line)
     local line_content = vim.fn.getbufline(bufnr, line_number)[1]
 
     if line_content:find("^ *%-%-?[a-zA-Z%-]+") then
-      local lc = vim.split(line_content, " ")
-      local x = ""
+      if line_content:find("^-F .+") then
+        --
+        local line_content_no_quotes = line_content:gsub('"', ""):gsub("'", "")
+        local x = vim.split(line_content_no_quotes, " ")
+        table.remove(x, 1)
+        x = table.concat(x, " ")
 
-      for i, y in ipairs(lc) do
-        x = x .. y
+        -- add key-value pair to form
+        local form_table = vim.split(x, "=")
+        form[form_table[1]] = form_table[2]
 
-        if #y:match("\\*$") % 2 == 1 and i ~= #lc then
-          -- insert space if there is an slash at end
-          x = x .. " "
-        else
-          -- insert 'x' into curl_args and reset it
-          table.insert(curl_args, x)
-          x = ""
+        -- configure next iteration
+        if line_number ~= end_line then
+          body_start = line_number - 1
+        end
+      else
+        local lc = vim.split(line_content, " ")
+        local x = ""
+
+        for i, y in ipairs(lc) do
+          x = x .. y
+
+          if #y:match("\\*$") % 2 == 1 and i ~= #lc then
+            -- insert space if there is an slash at end
+            x = x .. " "
+          else
+            -- insert 'x' into curl_args and reset it
+            table.insert(curl_args, x)
+            x = ""
+          end
         end
       end
     elseif not line_content:find("^ *$") then
@@ -179,7 +197,7 @@ local function get_curl_args(bufnr, headers_end, end_line)
     end
   end
 
-  return curl_args, body_start
+  return curl_args, body_start, form
 end
 
 -- start_request will find the request line (e.g. POST http://localhost:8081/foo)
@@ -284,7 +302,7 @@ M.buf_get_request = function(bufnr, curpos)
 
   local headers, headers_end = get_headers(bufnr, start_line, end_line)
 
-  local curl_args, body_start = get_curl_args(bufnr, headers_end, end_line)
+  local curl_args, body_start, form = get_curl_args(bufnr, headers_end, end_line)
 
   if headers["host"] ~= nil then
     headers["host"] = headers["host"]:gsub("%s+", "")
@@ -311,6 +329,7 @@ M.buf_get_request = function(bufnr, curpos)
       http_version = parsed_url.http_version,
       headers = headers,
       raw = curl_args,
+      form = form,
       body = body,
       bufnr = bufnr,
       start_line = start_line,
