@@ -166,7 +166,7 @@ local function get_curl_args(bufnr, headers_end, end_line)
 
         -- add key-value pair to form
         local form_table = vim.split(x, "=")
-        form[form_table[1]] = form_table[2]
+        form[form_table[1]] = utils.replace_vars(form_table[2])
 
         -- configure next iteration
         if line_number ~= end_line then
