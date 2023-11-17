@@ -121,7 +121,7 @@ local function get_headers(bufnr, start_line, end_line)
   for line_number = start_line + 1, end_line do
     local line_content = vim.fn.getbufline(bufnr, line_number)[1]
 
-    -- message header and message body are seperated by CRLF (see RFC 2616)
+    -- message header and message body are separated by CRLF (see RFC 2616)
     -- for our purpose also the next request line will stop the header search
     if is_request_line(line_content) or line_content == "" then
       headers_end = line_number
@@ -203,7 +203,7 @@ end
 -- start_request will find the request line (e.g. POST http://localhost:8081/foo)
 -- of the current request and returns the linenumber of this request line.
 -- The current request is defined as the next request line above the cursor
--- @param bufnr The buffer nummer of the .http-file
+-- @param bufnr The buffer number of the .http-file
 -- @param linenumber (number) From which line to start looking
 local function start_request(bufnr, linenumber)
   log.debug("Searching pattern starting from " .. linenumber)
@@ -211,7 +211,7 @@ local function start_request(bufnr, linenumber)
   local oldlinenumber = linenumber
   utils.move_cursor(bufnr, linenumber)
 
-  local res = vim.fn.search("^GET\\|^POST\\|^PUT\\|^PATCH\\|^DELETE", "cn")
+  local res = vim.fn.search("^GET\\|^POST\\|^PUT\\|^PATCH\\|^DELETE", "bcnW")
   -- restore cursor position
   utils.move_cursor(bufnr, oldlinenumber)
 
@@ -220,24 +220,23 @@ end
 
 -- end_request will find the next request line (e.g. POST http://localhost:8081/foo)
 -- and returns the linenumber before this request line or the end of the buffer
--- @param bufnr The buffer nummer of the .http-file
+-- @param bufnr The buffer number of the .http-file
 local function end_request(bufnr, linenumber)
   -- store old cursor position
   local oldlinenumber = linenumber
+  local last_line = vim.fn.line("$")
 
   -- start searching for next request from the next line
   -- as the current line does contain the current, not the next request
-  if linenumber < vim.fn.line("$") then
+  if linenumber < last_line then
     linenumber = linenumber + 1
   end
   utils.move_cursor(bufnr, linenumber)
 
-  local next =
-    vim.fn.search("^GET\\|^POST\\|^PUT\\|^PATCH\\|^DELETE\\|^###\\", "cn", vim.fn.line("$"))
+  local next = vim.fn.search("^GET\\|^POST\\|^PUT\\|^PATCH\\|^DELETE\\|^###\\", "cnW")
 
   -- restore cursor position
   utils.move_cursor(bufnr, oldlinenumber)
-  local last_line = vim.fn.line("$")
 
   if next == 0 or (oldlinenumber == last_line) then
     return last_line
@@ -304,12 +303,9 @@ M.buf_get_request = function(bufnr, curpos)
 
   local curl_args, body_start, form = get_curl_args(bufnr, headers_end, end_line)
 
-  if headers["host"] ~= nil then
-    headers["host"] = headers["host"]:gsub("%s+", "")
-    headers["host"] = string.gsub(headers["host"], "%s+", "")
-    parsed_url.url = headers["host"] .. parsed_url.url
-    headers["host"] = nil
-  end
+  local host = headers[utils.key(headers,"host")] or ""
+  parsed_url.url = host:gsub("%s+", "") .. parsed_url.url
+  headers[utils.key(headers,"host")] = nil
 
   local body = get_body(bufnr, body_start, end_line)
 

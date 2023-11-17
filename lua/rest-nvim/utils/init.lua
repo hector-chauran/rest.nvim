@@ -4,6 +4,7 @@ local random = math.random
 math.randomseed(os.time())
 
 local M = {}
+local contexts = {}
 
 M.binary_content_types = {
   "octet-stream",
@@ -28,6 +29,16 @@ M.set_env = function(key, value)
   local variables = M.get_env_variables()
   variables[key] = value
   M.write_env_file(variables)
+end
+
+-- set_context sets a context variable for the current file
+-- @param key The key to set
+-- @param value The value to set
+M.set_context = function(key, value)
+  local env_file = "/" .. (config.get("env_file") or ".env")
+  local context = contexts[env_file] or {}
+  context[key] = value
+  contexts[env_file] = context
 end
 
 M.write_env_file = function(variables)
@@ -107,6 +118,7 @@ M.get_file_variables = function()
   end
   return variables
 end
+
 -- Gets the variables from the currently selected env_file
 M.get_env_variables = function()
   local variables = {}
@@ -141,8 +153,13 @@ M.get_env_variables = function()
   return variables
 end
 
+M.get_context_variables = function()
+  local env_file = "/" .. (config.get("env_file") or ".env")
+  return contexts[env_file] or {}
+end
+
 -- get_variables Reads the environment variables found in the env_file option
--- (defualt: .env) specified in configuration or from the files being read
+-- (default: .env) specified in configuration or from the files being read
 -- with variables beginning with @ and returns a table with the variables
 M.get_variables = function()
   local variables = {}
@@ -228,10 +245,11 @@ end
 
 M.read_variables = function()
   local first = M.get_variables()
-  local second = M.read_dynamic_variables()
-  local third = M.read_document_variables()
+  local second = M.get_context_variables()
+  local third = M.read_dynamic_variables()
+  local fourth = M.read_document_variables()
 
-  return vim.tbl_extend("force", first, second, third)
+  return vim.tbl_extend("force", first, second, third, fourth)
 end
 
 -- replace_vars replaces the env variables fields in the provided string
@@ -284,6 +302,19 @@ M.has_value = function(tbl, str)
     end
   end
   return false
+end
+
+-- key returns the provided table's key that matches the given case-insensitive pattern.
+-- if not found, return the given key.
+-- @param tbl Table to iterate over
+-- @param key The key to be searched in the table
+M.key = function(tbl, key)
+  for tbl_key, _ in pairs(tbl) do
+    if string.lower(tbl_key) == string.lower(key) then
+      return tbl_key
+    end
+  end
+  return key
 end
 
 -- tbl_to_str recursively converts the provided table into a json string
@@ -401,7 +432,7 @@ M.http_status = function(code)
     [200] = "OK",
     [201] = "Created",
     [202] = "Accepted",
-    [203] = "Non-authorative Information",
+    [203] = "Non-authoritative Information",
     [204] = "No Content",
     [205] = "Reset Content",
     [206] = "Partial Content",
@@ -535,7 +566,7 @@ M.curl_error = function(code)
     [63] = "Maximum file size exceeded.",
     [64] = "Requested FTP SSL level failed.",
     [65] = "Sending the data requires a rewind that failed.",
-    [66] = "Failed to initialise SSL Engine.",
+    [66] = "Failed to initialize SSL Engine.",
     [67] = "The user name, password, or similar was not accepted and curl failed to log in.",
     [68] = "File not found on TFTP server.",
     [69] = "Permission problem on TFTP server.",

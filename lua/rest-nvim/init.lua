@@ -18,7 +18,6 @@ rest.setup = function(user_configs)
   config.set(user_configs or {})
 end
 
-
 -- run will retrieve the required request information from the current buffer
 -- and then execute curl
 -- @param verbose toggles if only a dry run with preview should be executed (true = preview)
@@ -102,13 +101,7 @@ local function splice_body(headers, payload)
   else
     lines = payload.body_tpl
   end
-  local content_type = ""
-  for key, val in pairs(headers) do
-    if string.lower(key) == "content-type" then
-      content_type = val
-      break
-    end
-  end
+  local content_type = headers[utils.key(headers,"content-type")] or ""
   local has_json = content_type:find("application/[^ ]*json")
 
   local body = ""
@@ -166,6 +159,7 @@ rest.run_request = function(req, opts)
   end
 
   Opts = {
+    request_id = vim.loop.now(), -- request id used to correlate RestStartRequest and RestStopRequest events
     method = result.method:lower(),
     url = result.url,
     -- plenary.curl can't set http protocol version
@@ -189,23 +183,7 @@ rest.run_request = function(req, opts)
     backend.highlight(result.bufnr, result.start_line, result.end_line)
   end
 
-  local request_id = vim.loop.now()
-  local data = {
-    requestId = request_id,
-    request = req,
-  }
-
-  vim.api.nvim_exec_autocmds("User", {
-    pattern = "RestStartRequest",
-    modeline = false,
-    data = data,
-  })
   local success_req, req_err = pcall(curl.curl_cmd, Opts)
-  vim.api.nvim_exec_autocmds("User", {
-    pattern = "RestStopRequest",
-    modeline = false,
-    data = vim.tbl_extend("keep", { status = success_req, message = req_err }, data),
-  })
 
   if not success_req then
     vim.api.nvim_err_writeln(

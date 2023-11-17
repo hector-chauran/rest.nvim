@@ -31,6 +31,29 @@ local function format_curl_cmd(res)
   return cmd
 end
 
+local function send_curl_start_event(data)
+  vim.api.nvim_exec_autocmds("User", {
+    pattern = "RestStartRequest",
+    modeline = false,
+    data = data,
+  })
+end
+
+local function send_curl_stop_event(data)
+  vim.api.nvim_exec_autocmds("User", {
+    pattern = "RestStopRequest",
+    modeline = false,
+    data = data,
+  })
+end
+
+local function create_error_handler(opts)
+  return function(err)
+    send_curl_stop_event(vim.tbl_extend("keep", { err = err }, opts))
+    error(err.message)
+  end
+end
+
 -- get_or_create_buf checks if there is already a buffer with the rest run results
 -- and if the buffer does not exists, then create a new one
 M.get_or_create_buf = function()
@@ -64,25 +87,25 @@ M.get_or_create_buf = function()
   vim.api.nvim_set_option_value("ft", "httpResult", { buf = new_bufnr })
   vim.api.nvim_set_option_value("buftype", "nofile", { buf = new_bufnr })
 
-
   return new_bufnr
 end
 
-local function create_callback(curl_cmd, method, url, script_str)
+local function create_callback(curl_cmd, opts)
+  local method = opts.method
+  local url = opts.url
+  local script_str = opts.script_str
+
   return function(res)
+    send_curl_stop_event(vim.tbl_extend("keep", { res = res }, opts))
+
     if res.exit ~= 0 then
       log.error("[rest.nvim] " .. utils.curl_error(res.exit))
       return
     end
     local res_bufnr = M.get_or_create_buf()
-    local content_type = nil
-
-    -- get content type
-    for _, header in ipairs(res.headers) do
-      if string.lower(header):find("^content%-type") then
-        content_type = header:match("application/([-a-z]+)") or header:match("text/(%l+)")
-        break
-      end
+    local content_type = res.headers[utils.key(res.headers,'content-type')]
+    if content_type then
+      content_type = content_type:match("application/([-a-z]+)") or content_type:match("text/(%l+)")
     end
 
     if script_str ~= nil then
@@ -91,6 +114,7 @@ local function create_callback(curl_cmd, method, url, script_str)
         pretty_print = vim.pretty_print,
         json_decode = vim.fn.json_decode,
         set_env = utils.set_env,
+        set = utils.set_context,
       }
       local env = { context = context }
       setmetatable(env, { __index = _G })
@@ -234,16 +258,20 @@ M.curl_cmd = function(opts)
   local res = curl[opts.method](dry_run_opts)
   local curl_cmd = format_curl_cmd(res)
 
+  send_curl_start_event(opts)
+
   if opts.dry_run then
     if config.get("yank_dry_run") then
       vim.cmd("let @+=" .. string.format("%q", curl_cmd))
     end
 
     vim.api.nvim_echo({ { "[rest.nvim] Request preview:\n", "Comment" }, { curl_cmd } }, false, {})
+
+    send_curl_stop_event(opts)
     return
   else
-    opts.callback =
-      vim.schedule_wrap(create_callback(curl_cmd, opts.method, opts.url, opts.script_str))
+    opts.callback = vim.schedule_wrap(create_callback(curl_cmd, opts))
+    opts.on_error = vim.schedule_wrap(create_error_handler(opts))
     curl[opts.method](opts)
   end
 end
